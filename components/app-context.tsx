@@ -25,6 +25,7 @@ interface AppContextValue extends AppState {
   discardEntry: (id: string) => void;
   updateEntry: (id: string, updates: Partial<ActivityEntry>) => void;
   approveAllEntries: () => number;
+  approveFilteredEntries: (matterFilter: string | null) => { count: number; matterName: string | null };
   loginWithPreset: () => void;
   finishOnboarding: () => void;
   signOut: () => void;
@@ -124,6 +125,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return count;
   }, []);
 
+  const approveFilteredEntries = useCallback((matterFilter: string | null) => {
+    let count = 0;
+    let matterName: string | null = null;
+    setState(prev => {
+      const pendingEntries = prev.entries.filter(e => 
+        e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
+      );
+      count = pendingEntries.length;
+      matterName = matterFilter;
+      return {
+        ...prev,
+        entries: prev.entries.map(e =>
+          e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
+            ? { ...e, status: 'approved' as const }
+            : e
+        ),
+      };
+    });
+    return { count, matterName };
+  }, []);
+
   const loginWithPreset = useCallback(() => {
     setState(prev => ({
       ...prev,
@@ -167,6 +189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         discardEntry,
         updateEntry,
         approveAllEntries,
+        approveFilteredEntries,
         loginWithPreset,
         finishOnboarding,
         signOut,

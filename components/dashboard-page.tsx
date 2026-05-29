@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from './app-context';
 import { Toast } from './toast';
 import { Paperclip } from 'lucide-react';
@@ -179,6 +179,85 @@ function ActivityCard({
   );
 }
 
+interface MatterTab {
+  name: string;
+  count: number;
+}
+
+function MatterFilterTabs({
+  matters,
+  activeMatter,
+  onSelectMatter,
+  totalCount,
+}: {
+  matters: MatterTab[];
+  activeMatter: string | null;
+  onSelectMatter: (matter: string | null) => void;
+  totalCount: number;
+}) {
+  return (
+    <div 
+      className="flex gap-2 overflow-x-auto pb-1 mb-4"
+      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+    >
+      <style jsx>{`
+        div::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+      {/* All tab */}
+      <button
+        onClick={() => onSelectMatter(null)}
+        className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-[20px] text-[13px] font-medium transition-all duration-150 ${
+          activeMatter === null
+            ? 'bg-[#4F7EF7] text-white'
+            : 'bg-transparent border border-[#2A2D3E] text-[#6B7080] hover:border-[#4F7EF7] hover:text-[#B0AFA8]'
+        }`}
+      >
+        All
+        <span
+          className={`px-1.5 py-0.5 rounded-[10px] text-[10px] font-mono ${
+            activeMatter === null
+              ? 'bg-white/20 text-white'
+              : 'bg-[#1E2130] text-[#6B7080]'
+          }`}
+        >
+          {totalCount}
+        </span>
+      </button>
+      
+      {/* Matter tabs */}
+      {matters.map((matter) => {
+        const isActive = activeMatter === matter.name;
+        const isEmpty = matter.count === 0;
+        
+        return (
+          <button
+            key={matter.name}
+            onClick={() => onSelectMatter(matter.name)}
+            className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-[20px] text-[13px] font-medium transition-all duration-150 ${
+              isActive
+                ? 'bg-[#4F7EF7] text-white'
+                : 'bg-transparent border border-[#2A2D3E] text-[#6B7080] hover:border-[#4F7EF7] hover:text-[#B0AFA8]'
+            } ${isEmpty && !isActive ? 'opacity-60' : ''}`}
+          >
+            {matter.name}
+            <span
+              className={`px-1.5 py-0.5 rounded-[10px] text-[10px] font-mono ${
+                isActive
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#1E2130] text-[#6B7080]'
+              }`}
+            >
+              {matter.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const {
     profile,
@@ -186,14 +265,49 @@ export function DashboardPage() {
     approveEntry,
     discardEntry,
     updateEntry,
-    approveAllEntries,
+    approveFilteredEntries,
     signOut,
   } = useApp();
 
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [activeMatter, setActiveMatter] = useState<string | null>(null);
 
   const pendingEntries = entries.filter((e) => e.status === 'pending');
   const approvedEntries = entries.filter((e) => e.status === 'approved');
+
+  // Build matter tabs from pending entries
+  const matterTabs = useMemo(() => {
+    const matterCounts = new Map<string, number>();
+    const matterOrder: string[] = [];
+    
+    // Count pending entries per matter, maintaining insertion order
+    entries.forEach((e) => {
+      if (e.matterName && !matterCounts.has(e.matterName)) {
+        matterCounts.set(e.matterName, 0);
+        matterOrder.push(e.matterName);
+      }
+    });
+    
+    // Count only pending entries
+    pendingEntries.forEach((e) => {
+      if (e.matterName) {
+        matterCounts.set(e.matterName, (matterCounts.get(e.matterName) || 0) + 1);
+      }
+    });
+    
+    return matterOrder.map((name) => ({
+      name,
+      count: matterCounts.get(name) || 0,
+    }));
+  }, [entries, pendingEntries]);
+
+  // Filtered pending entries based on active matter
+  const filteredPendingEntries = useMemo(() => {
+    if (activeMatter === null) {
+      return pendingEntries;
+    }
+    return pendingEntries.filter((e) => e.matterName === activeMatter);
+  }, [pendingEntries, activeMatter]);
 
   const pendingHours = pendingEntries.reduce((sum, e) => sum + e.hours, 0);
   const approvedHours = approvedEntries.reduce((sum, e) => sum + e.hours, 0);
@@ -220,8 +334,12 @@ export function DashboardPage() {
   };
 
   const handleApproveAll = () => {
-    const count = approveAllEntries();
-    setToast({ message: `${count} entries approved and logged.`, type: 'approve' });
+    const { count, matterName } = approveFilteredEntries(activeMatter);
+    if (matterName) {
+      setToast({ message: `${count} entries approved for ${matterName}.`, type: 'approve' });
+    } else {
+      setToast({ message: `${count} entries approved and logged.`, type: 'approve' });
+    }
   };
 
   const initials = profile?.fullName
@@ -288,18 +406,26 @@ export function DashboardPage() {
               <h2 className="text-xl font-semibold text-[#E8E6DF]">Activity queue</h2>
               <p className="text-sm text-[#4A4F62]">{pendingEntries.length} entries pending review</p>
             </div>
-            {pendingEntries.length > 0 && (
+            {filteredPendingEntries.length > 0 && (
               <button
                 onClick={handleApproveAll}
                 className="px-4 py-2 bg-[#1A2540] text-[#4F7EF7] border border-[#4F7EF7] rounded-lg text-sm font-medium hover:bg-[#1E2A4A] transition-colors"
               >
-                Approve all
+                Approve all ({filteredPendingEntries.length})
               </button>
             )}
           </div>
 
-          <div className="space-y-4">
-            {pendingEntries.map((entry) => (
+          {/* Matter filter tabs */}
+          <MatterFilterTabs
+            matters={matterTabs}
+            activeMatter={activeMatter}
+            onSelectMatter={setActiveMatter}
+            totalCount={pendingEntries.length}
+          />
+
+          <div className="space-y-4 mt-4">
+            {filteredPendingEntries.map((entry) => (
               <ActivityCard
                 key={entry.id}
                 entry={entry}
@@ -309,7 +435,13 @@ export function DashboardPage() {
                 onSave={(updates) => handleSave(entry.id, updates)}
               />
             ))}
-            {pendingEntries.length === 0 && (
+            {filteredPendingEntries.length === 0 && activeMatter !== null && (
+              <div className="bg-[#13151E] border border-[#1E2130] rounded-xl p-12 text-center">
+                <p className="text-[#6B7080]">All caught up on {activeMatter}.</p>
+                <p className="text-sm text-[#4A4F62] mt-1">Switch to another matter or check back soon.</p>
+              </div>
+            )}
+            {filteredPendingEntries.length === 0 && activeMatter === null && (
               <div className="bg-[#13151E] border border-[#1E2130] rounded-xl p-12 text-center">
                 <p className="text-[#4A4F62]">All caught up! No pending entries.</p>
               </div>
