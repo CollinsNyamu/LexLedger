@@ -1,29 +1,37 @@
-'use client';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
 
-import { AppProvider, useApp } from '@/components/app-context';
-import { AuthPage } from '@/components/auth-page';
-import { OnboardingPage } from '@/components/onboarding-page';
-import { DashboardPage } from '@/components/dashboard-page';
+export default async function Home() {
+  const supabase = await createClient();
 
-function AppContent() {
-  const { view } = useApp();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  switch (view) {
-    case 'auth':
-      return <AuthPage />;
-    case 'onboarding':
-      return <OnboardingPage />;
-    case 'dashboard':
-      return <DashboardPage />;
-    default:
-      return <AuthPage />;
+  if (!user) {
+    redirect('/auth');
   }
-}
 
-export default function Home() {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role,onboarding_completed')
+    .eq('id', user.id)
+    .single();
+
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <main className="min-h-screen bg-black text-white p-10">
+      <h1 className="text-4xl font-bold mb-4">LexLedger</h1>
+
+      <p>Successfully authenticated.</p>
+      <p className="mt-4">User: {user.email}</p>
+      <p>Role: {profile?.role ?? 'missing profile'}</p>
+      <p>Onboarding complete: {profile?.onboarding_completed ? 'yes' : 'no'}</p>
+
+      <form action="/auth/signout" method="post" className="mt-8">
+        <button className="rounded bg-white px-4 py-2 text-black">
+          Sign out
+        </button>
+      </form>
+    </main>
   );
 }
