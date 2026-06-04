@@ -1,13 +1,14 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { useApp } from './app-context';
-import { Eye, EyeOff } from 'lucide-react';
+import { useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Eye, EyeOff } from 'lucide-react'
+import { signIn, signUp } from '@/app/actions'
 
 interface FeaturePillProps {
-  text: string;
-  color: string;
-  delay: number;
+  text: string
+  color: string
+  delay: number
 }
 
 function FeaturePill({ text, color, delay }: FeaturePillProps) {
@@ -19,52 +20,104 @@ function FeaturePill({ text, color, delay }: FeaturePillProps) {
       <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
       <span className="text-sm text-[#B0AFA8]">{text}</span>
     </div>
-  );
+  )
 }
 
 export function AuthPage() {
-  const { setView, setProfile, loginWithPreset } = useApp();
-  const [activeTab, setActiveTab] = useState<'login' | 'create'>('login');
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [isPending, startTransition] = useTransition()
+  
+  const [activeTab, setActiveTab] = useState<'login' | 'create'>('login')
   
   // Login form state
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
+  const [loginError, setLoginError] = useState('')
   
   // Create account form state
-  const [fullName, setFullName] = useState('');
-  const [workEmail, setWorkEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
+  const [fullName, setFullName] = useState('')
+  const [workEmail, setWorkEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [signUpSuccess, setSignUpSuccess] = useState(false)
+
+  const errorFromUrl = searchParams.get('error')
 
   const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    loginWithPreset();
-  };
+    e.preventDefault()
+    setLoginError('')
+    
+    startTransition(async () => {
+      const result = await signIn(loginEmail, loginPassword)
+      if (result.error) {
+        setLoginError(result.error)
+      } else {
+        router.push('/dashboard')
+        router.refresh()
+      }
+    })
+  }
 
   const handleCreateAccount = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError('');
+    e.preventDefault()
+    setPasswordError('')
     
     if (password !== confirmPassword) {
-      setPasswordError('Passwords do not match.');
-      return;
+      setPasswordError('Passwords do not match.')
+      return
+    }
+
+    if (password.length < 6) {
+      setPasswordError('Password must be at least 6 characters.')
+      return
     }
     
-    setProfile({
-      fullName,
-      email: workEmail,
-      lawFirm: '',
-      hourlyRate: 0,
-      practiceArea: '',
-    });
-    setView('onboarding');
-  };
+    startTransition(async () => {
+      const result = await signUp(workEmail, password, fullName)
+      if (result.error) {
+        setPasswordError(result.error)
+      } else if (result.needsEmailConfirmation) {
+        setSignUpSuccess(true)
+      } else {
+        // If email confirmation is not required, redirect to onboarding
+        router.push('/onboarding')
+        router.refresh()
+      }
+    })
+  }
 
-  const isCreateValid = fullName && workEmail && password && confirmPassword;
+  const isCreateValid = fullName && workEmail && password && confirmPassword
+
+  if (signUpSuccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0C0E14] p-8">
+        <div className="w-full max-w-md bg-[#13151E] border border-[#1E2130] rounded-2xl p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#22C48A]/10 rounded-2xl mb-6">
+            <span className="text-3xl text-[#22C48A]">✓</span>
+          </div>
+          <h2 className="text-2xl font-bold text-[#E8E6DF] mb-2">Check your email</h2>
+          <p className="text-[#6B7080] mb-6">
+            We&apos;ve sent a confirmation link to <span className="text-[#E8E6DF]">{workEmail}</span>. 
+            Click the link to activate your account.
+          </p>
+          <button
+            onClick={() => {
+              setSignUpSuccess(false)
+              setActiveTab('login')
+            }}
+            className="text-[#4F7EF7] hover:underline"
+          >
+            Back to login
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -104,6 +157,13 @@ export function AuthPage() {
             </h1>
           </div>
 
+          {/* Error from URL */}
+          {errorFromUrl && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              Authentication failed. Please try again.
+            </div>
+          )}
+
           {/* Tabs */}
           <div className="flex border-b border-[#1E2130] mb-8">
             <button
@@ -139,6 +199,7 @@ export function AuthPage() {
                   onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full px-4 py-2.5 bg-[#0C0E14] border border-[#1E2130] rounded-lg text-[#E8E6DF] placeholder-[#4A4F62] focus:border-[#4F7EF7] focus:outline-none transition-colors"
                   placeholder="you@lawfirm.com"
+                  required
                 />
               </div>
               <div>
@@ -150,6 +211,7 @@ export function AuthPage() {
                     onChange={(e) => setLoginPassword(e.target.value)}
                     className="w-full px-4 py-2.5 bg-[#0C0E14] border border-[#1E2130] rounded-lg text-[#E8E6DF] placeholder-[#4A4F62] focus:border-[#4F7EF7] focus:outline-none transition-colors pr-10"
                     placeholder="••••••••"
+                    required
                   />
                   <button
                     type="button"
@@ -160,11 +222,15 @@ export function AuthPage() {
                   </button>
                 </div>
               </div>
+              {loginError && (
+                <p className="text-red-500 text-sm">{loginError}</p>
+              )}
               <button
                 type="submit"
-                className="w-full py-3 bg-[#4F7EF7] text-white font-medium rounded-lg hover:bg-[#3D6AE0] transition-colors mt-6"
+                disabled={isPending}
+                className="w-full py-3 bg-[#4F7EF7] text-white font-medium rounded-lg hover:bg-[#3D6AE0] transition-colors mt-6 disabled:opacity-50"
               >
-                Log in
+                {isPending ? 'Logging in...' : 'Log in'}
               </button>
               <p className="text-center text-xs text-[#4A4F62] mt-4">
                 Forgot password?
@@ -224,8 +290,8 @@ export function AuthPage() {
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => {
-                      setConfirmPassword(e.target.value);
-                      setPasswordError('');
+                      setConfirmPassword(e.target.value)
+                      setPasswordError('')
                     }}
                     className={`w-full px-4 py-2.5 bg-[#0C0E14] border rounded-lg text-[#E8E6DF] placeholder-[#4A4F62] focus:outline-none transition-colors pr-10 ${
                       passwordError ? 'border-red-500' : 'border-[#1E2130] focus:border-[#4F7EF7]'
@@ -247,12 +313,12 @@ export function AuthPage() {
               </div>
               <button
                 type="submit"
-                disabled={!isCreateValid}
+                disabled={!isCreateValid || isPending}
                 className={`w-full py-3 bg-[#4F7EF7] text-white font-medium rounded-lg transition-colors mt-6 ${
-                  isCreateValid ? 'hover:bg-[#3D6AE0]' : 'opacity-35 cursor-not-allowed'
+                  isCreateValid && !isPending ? 'hover:bg-[#3D6AE0]' : 'opacity-35 cursor-not-allowed'
                 }`}
               >
-                Create account →
+                {isPending ? 'Creating account...' : 'Create account →'}
               </button>
               <p className="text-center text-[10px] text-[#4A4F62] mt-4">
                 By creating an account you agree to our Terms of Service
@@ -279,5 +345,5 @@ export function AuthPage() {
         }
       `}</style>
     </div>
-  );
+  )
 }
