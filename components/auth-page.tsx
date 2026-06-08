@@ -2,18 +2,24 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useSearchParams } from 'next/navigation';
 
 type AuthTab = 'login' | 'create';
 type Role = 'attorney' | 'client';
 
 export function AuthPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const token = searchParams.get('token');
+  const roleParam = searchParams.get('role');
+  const emailParam = searchParams.get('email');
 
   const [activeTab, setActiveTab] = useState<AuthTab>('login');
-  const [role, setRole] = useState<Role>('attorney');
+  const [role, setRole] = useState<Role>(roleParam === 'client' ? 'client' : 'attorney');
+
 
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(emailParam ?? '');
   const [password, setPassword] = useState('');
 
   const [error, setError] = useState('');
@@ -45,7 +51,7 @@ export function AuthPage() {
     setError('');
     setNotice('');
 
-    if (role === 'client') {
+    if (role === 'client' && !token) {
       setError('Client accounts require an invitation link from your law firm.');
       return;
     }
@@ -70,6 +76,24 @@ export function AuthPage() {
     }
 
     if (data.session) {
+      if (role === 'client' && token) {
+        const response = await fetch('/api/invitations/accept', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token }),
+        });
+    
+        const result = await response.json();
+    
+        if (!response.ok) {
+          setError(result.error ?? 'Could not accept invitation.');
+          setLoading(false);
+          return;
+        }
+      }
+    
       window.location.href = '/';
       return;
     }
