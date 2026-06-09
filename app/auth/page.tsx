@@ -1,16 +1,10 @@
-import { Suspense } from 'react';
+import { AppProvider } from '@/components/app-context';
 import { AuthPage } from '@/components/auth-page';
 
-export default function Page() {
+export default function AuthRoute() {
   return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen bg-[#0C0E14] text-white flex items-center justify-center">
-          Loading...
-        </main>
-      }
-    >
+    <AppProvider>
       <AuthPage />
-    </Suspense>
+    </AppProvider>
   );
 }

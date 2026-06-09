@@ -1,8 +1,15 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import type { UserProfile, Matter, ActivityEntry, AppView, OnboardingStep } from '@/lib/types';
-import { PRESET_PROFILE, PRESET_ENTRIES, generateEntriesForMatters } from '@/lib/mock-data';
+import { createClient } from '@/lib/supabase/client';
+import {
+  getAttorneyDashboardData,
+  updateActivityEntryStatus,
+  updateActivityEntry as updateActivityEntryInDb,
+  approveAllPendingActivityEntries,
+  approvePendingActivityEntriesByMatterName,
+} from '@/lib/supabase/dashboard';
 
 interface AppState {
   view: AppView;
@@ -21,14 +28,12 @@ interface AppContextValue extends AppState {
   disconnectPlatform: (platform: string) => void;
   addMatter: (matter: Matter) => void;
   removeMatter: (id: string) => void;
-  approveEntry: (id: string) => void;
-  discardEntry: (id: string) => void;
-  updateEntry: (id: string, updates: Partial<ActivityEntry>) => void;
-  approveAllEntries: () => number;
-  approveFilteredEntries: (matterFilter: string | null) => { count: number; matterName: string | null };
-  loginWithPreset: () => void;
-  finishOnboarding: () => void;
-  signOut: () => void;
+  approveEntry: (id: string) => Promise<void>;
+  discardEntry: (id: string) => Promise<void>;
+  updateEntry: (id: string, updates: Partial<ActivityEntry>) => Promise<void>;
+  approveAllEntries: () => Promise<number>;
+  approveFilteredEntries: (matterFilter: string | null) => Promise<{ count: number; matterName: string | null }>;
+  signOut: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -42,6 +47,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     matters: [],
     entries: [],
   });
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) return;
+
+      const data = await getAttorneyDashboardData(session.user.id);
+
+      setState(prev => ({
+        ...prev,
+        profile: data.profile,
+        matters: data.matters,
+        entries: data.entries,
+        view: 'dashboard',
+      }));
+    }
+
+    loadDashboardData();
+  }, []);
 
   const setView = useCallback((view: AppView) => {
     setState(prev => ({ ...prev, view }));
@@ -83,7 +112,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const approveEntry = useCallback((id: string) => {
+  const approveEntry = useCallback(async (id: string) => {
+    await updateActivityEntryStatus(id, 'approved');
+
     setState(prev => ({
       ...prev,
       entries: prev.entries.map(e =>
@@ -92,7 +123,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const discardEntry = useCallback((id: string) => {
+  const discardEntry = useCallback(async (id: string) => {
+    await updateActivityEntryStatus(id, 'discarded');
+
     setState(prev => ({
       ...prev,
       entries: prev.entries.map(e =>
@@ -101,7 +134,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const updateEntry = useCallback((id: string, updates: Partial<ActivityEntry>) => {
+  const updateEntry = useCallback(async (id: string, updates: Partial<ActivityEntry>) => {
+    await updateActivityEntryInDb(id, updates);
+
     setState(prev => ({
       ...prev,
       entries: prev.entries.map(e =>
@@ -110,60 +145,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const approveAllEntries = useCallback(() => {
-    let count = 0;
-    setState(prev => {
-      const pendingEntries = prev.entries.filter(e => e.status === 'pending');
-      count = pendingEntries.length;
-      return {
-        ...prev,
-        entries: prev.entries.map(e =>
-          e.status === 'pending' ? { ...e, status: 'approved' as const } : e
-        ),
-      };
-    });
+  const approveAllEntries = useCallback(async () => {
+    const count = state.entries.filter(e => e.status === 'pending').length;
+
+    await approveAllPendingActivityEntries();
+
+    setState(prev => ({
+      ...prev,
+      entries: prev.entries.map(e =>
+        e.status === 'pending' ? { ...e, status: 'approved' as const } : e
+      ),
+    }));
+
     return count;
-  }, []);
+  }, [state.entries]);
 
-  const approveFilteredEntries = useCallback((matterFilter: string | null) => {
-    let count = 0;
-    let matterName: string | null = null;
-    setState(prev => {
-      const pendingEntries = prev.entries.filter(e => 
+  const approveFilteredEntries = useCallback(async (matterFilter: string | null) => {
+    const count = state.entries.filter(e =>
+      e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
+    ).length;
+
+    if (matterFilter === null) {
+      await approveAllPendingActivityEntries();
+    } else {
+      await approvePendingActivityEntriesByMatterName(matterFilter);
+    }
+
+    setState(prev => ({
+      ...prev,
+      entries: prev.entries.map(e =>
         e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
-      );
-      count = pendingEntries.length;
-      matterName = matterFilter;
-      return {
-        ...prev,
-        entries: prev.entries.map(e =>
-          e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
-            ? { ...e, status: 'approved' as const }
-            : e
-        ),
-      };
-    });
-    return { count, matterName };
-  }, []);
-
-  const loginWithPreset = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      profile: PRESET_PROFILE,
-      entries: PRESET_ENTRIES,
-      view: 'dashboard',
+          ? { ...e, status: 'approved' as const }
+          : e
+      ),
     }));
-  }, []);
 
-  const finishOnboarding = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      entries: generateEntriesForMatters(prev.matters, prev.profile?.hourlyRate || 0),
-      view: 'dashboard',
-    }));
-  }, []);
+    return { count, matterName: matterFilter };
+  }, [state.entries]);
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+
     setState({
       view: 'auth',
       onboardingStep: 1,
@@ -172,7 +194,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       matters: [],
       entries: [],
     });
-  }, []);
+
+    window.location.href = '/auth';
+  }, [supabase]);
 
   return (
     <AppContext.Provider
@@ -190,8 +214,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateEntry,
         approveAllEntries,
         approveFilteredEntries,
-        loginWithPreset,
-        finishOnboarding,
         signOut,
       }}
     >
@@ -202,8 +224,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 export function useApp() {
   const context = useContext(AppContext);
+
   if (!context) {
     throw new Error('useApp must be used within an AppProvider');
   }
+
   return context;
 }

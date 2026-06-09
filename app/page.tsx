@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { AppProvider } from '@/components/app-context';
+import { DashboardPage } from '@/components/dashboard-page';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -8,30 +10,19 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect('/auth');
-  }
+  if (!user) redirect('/auth');
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role,onboarding_completed')
+    .select('role')
     .eq('id', user.id)
     .single();
 
+  if (!profile || profile.role !== 'attorney') redirect('/auth');
+
   return (
-    <main className="min-h-screen bg-black text-white p-10">
-      <h1 className="text-4xl font-bold mb-4">LexLedger</h1>
-
-      <p>Successfully authenticated.</p>
-      <p className="mt-4">User: {user.email}</p>
-      <p>Role: {profile?.role ?? 'missing profile'}</p>
-      <p>Onboarding complete: {profile?.onboarding_completed ? 'yes' : 'no'}</p>
-
-      <form action="/auth/signout" method="post" className="mt-8">
-        <button className="rounded bg-white px-4 py-2 text-black">
-          Sign out
-        </button>
-      </form>
-    </main>
+    <AppProvider>
+      <DashboardPage />
+    </AppProvider>
   );
 }

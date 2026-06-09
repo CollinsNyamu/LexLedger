@@ -17,7 +17,6 @@ export function AuthPage() {
   const [activeTab, setActiveTab] = useState<AuthTab>('login');
   const [role, setRole] = useState<Role>(roleParam === 'client' ? 'client' : 'attorney');
 
-
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState(emailParam ?? '');
   const [password, setPassword] = useState('');
@@ -84,16 +83,16 @@ export function AuthPage() {
           },
           body: JSON.stringify({ token }),
         });
-    
+
         const result = await response.json();
-    
+
         if (!response.ok) {
           setError(result.error ?? 'Could not accept invitation.');
           setLoading(false);
           return;
         }
       }
-    
+
       window.location.href = '/';
       return;
     }
