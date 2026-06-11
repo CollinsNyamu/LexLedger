@@ -8,8 +8,12 @@ import {
   updateActivityEntryStatus,
   updateActivityEntry as updateActivityEntryInDb,
   approveAllPendingActivityEntries,
-  approvePendingActivityEntriesByMatterName,
+  approvePendingActivityEntriesByMatterId,
 } from '@/lib/supabase/dashboard';
+import {
+  createMatter,
+  closeMatter,
+} from '@/lib/supabase/matters';
 
 interface AppState {
   view: AppView;
@@ -26,13 +30,15 @@ interface AppContextValue extends AppState {
   setProfile: (profile: UserProfile) => void;
   connectPlatform: (platform: string) => void;
   disconnectPlatform: (platform: string) => void;
-  addMatter: (matter: Matter) => void;
-  removeMatter: (id: string) => void;
+  addMatter: (matter: Matter) => Promise<void>;
+  removeMatter: (id: string) => Promise<void>;
   approveEntry: (id: string) => Promise<void>;
   discardEntry: (id: string) => Promise<void>;
   updateEntry: (id: string, updates: Partial<ActivityEntry>) => Promise<void>;
   approveAllEntries: () => Promise<number>;
-  approveFilteredEntries: (matterFilter: string | null) => Promise<{ count: number; matterName: string | null }>;
+  approveFilteredEntries: (
+    matterId: string | null
+  ) => Promise<{ count: number; matterId: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -98,14 +104,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const addMatter = useCallback((matter: Matter) => {
+  const addMatter = useCallback(async (matter: Matter) => {
+    const createdMatter = await createMatter(matter);
+  
     setState(prev => ({
       ...prev,
-      matters: [...prev.matters, matter],
+      matters: [...prev.matters, createdMatter],
     }));
   }, []);
 
-  const removeMatter = useCallback((id: string) => {
+  const removeMatter = useCallback(async (id: string) => {
+    await closeMatter(id);
+  
     setState(prev => ({
       ...prev,
       matters: prev.matters.filter(m => m.id !== id),
@@ -160,27 +170,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return count;
   }, [state.entries]);
 
-  const approveFilteredEntries = useCallback(async (matterFilter: string | null) => {
+  const approveFilteredEntries = useCallback(async (matterId: string | null) => {
     const count = state.entries.filter(e =>
-      e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
+      e.status === 'pending' && (matterId === null || e.matterId === matterId)
     ).length;
-
-    if (matterFilter === null) {
+  
+    if (matterId === null) {
       await approveAllPendingActivityEntries();
     } else {
-      await approvePendingActivityEntriesByMatterName(matterFilter);
+      await approvePendingActivityEntriesByMatterId(matterId);
     }
-
+  
     setState(prev => ({
       ...prev,
       entries: prev.entries.map(e =>
-        e.status === 'pending' && (matterFilter === null || e.matterName === matterFilter)
+        e.status === 'pending' && (matterId === null || e.matterId === matterId)
           ? { ...e, status: 'approved' as const }
           : e
       ),
     }));
-
-    return { count, matterName: matterFilter };
+  
+    return { count, matterId };
   }, [state.entries]);
 
   const signOut = useCallback(async () => {

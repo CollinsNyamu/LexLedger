@@ -30,7 +30,8 @@ export interface ActivityEntry {
   narrative: string;
   hasAttachment: boolean;
   status: 'pending' | 'approved' | 'discarded';
-  matterName?: string;
+  matterId?: string;
+  matterName?: string; 
 }
 
 export interface OnboardingData {

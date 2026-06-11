@@ -80,7 +80,7 @@ export function OnboardingPage() {
     matters,
     addMatter,
     removeMatter,
-    finishOnboarding,
+    setView,
   } = useApp();
 
   // Step 1 state
@@ -121,20 +121,21 @@ export function OnboardingPage() {
     }
   };
 
-  const handleAddMatter = () => {
-    if (matterName && clientName && matterType && clientEmail) {
-      addMatter({
-        id: Date.now().toString(),
-        name: matterName,
-        clientName,
-        matterType,
-        clientEmail,
-      });
-      setMatterName('');
-      setClientName('');
-      setMatterType('');
-      setClientEmail('');
-    }
+  const handleAddMatter = async () => {
+    if (!matterName || !clientName || !matterType || !clientEmail) return;
+  
+    await addMatter({
+      id: '',
+      name: matterName,
+      clientName,
+      matterType,
+      clientEmail,
+    });
+  
+    setMatterName('');
+    setClientName('');
+    setMatterType('');
+    setClientEmail('');
   };
 
   const canContinue = () => {
@@ -382,7 +383,7 @@ export function OnboardingPage() {
                         </p>
                       </div>
                       <button
-                        onClick={() => removeMatter(matter.id)}
+                        onClick={() => void removeMatter(matter.id)}
                         className="p-2 text-[#4A4F62] hover:text-[#E8E6DF] transition-colors"
                       >
                         <X size={18} />
@@ -448,11 +449,11 @@ export function OnboardingPage() {
               </div>
 
               <button
-                onClick={finishOnboarding}
-                className="w-full py-3 bg-[#4F7EF7] text-white font-medium rounded-lg hover:bg-[#3D6AE0] transition-colors"
-              >
-                Go to dashboard →
-              </button>
+                  onClick={() => setView('dashboard')}
+                  className="w-full py-3 bg-[#4F7EF7] text-white font-medium rounded-lg hover:bg-[#3D6AE0] transition-colors"
+                >
+                  Go to dashboard →
+                </button>
             </div>
           )}
         </div>

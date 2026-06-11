@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from './app-context';
 import { Toast } from './toast';
 import { Paperclip } from 'lucide-react';
-import type { ActivityEntry } from '@/lib/types';
+import type { ActivityEntry, Matter } from '@/lib/types';
 
 interface ToastState {
   message: string;
@@ -29,6 +29,35 @@ function MetricCard({
         {value}
       </p>
       <p className="text-sm text-[#4A4F62]">{subtitle}</p>
+    </div>
+  );
+}
+
+function MatterCard({
+  matter,
+  onClose,
+}: {
+  matter: Matter;
+  onClose: () => void;
+}) {
+  return (
+    <div className="bg-[#13151E] border border-[#1E2130] rounded-xl p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[#E8E6DF] font-medium">{matter.name}</p>
+          <p className="text-sm text-[#6B7080] mt-1">{matter.clientName}</p>
+          <p className="text-xs text-[#4A4F62] mt-1">
+            {matter.matterType} · {matter.clientEmail}
+          </p>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="shrink-0 px-3 py-1.5 border border-[#2A2D3E] text-[#6B7080] rounded-lg text-xs font-medium hover:border-red-500 hover:text-red-400 transition-colors"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }
@@ -179,167 +208,91 @@ function ActivityCard({
   );
 }
 
-interface MatterTab {
-  name: string;
-  count: number;
-}
 
-function MatterFilterTabs({
-  matters,
-  activeMatter,
-  onSelectMatter,
-  totalCount,
-}: {
-  matters: MatterTab[];
-  activeMatter: string | null;
-  onSelectMatter: (matter: string | null) => void;
-  totalCount: number;
-}) {
-  return (
-    <div 
-      className="flex gap-2 overflow-x-auto pb-1 mb-4"
-      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-    >
-      <style jsx>{`
-        div::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
-      {/* All tab */}
-      <button
-        onClick={() => onSelectMatter(null)}
-        className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-[20px] text-[13px] font-medium transition-all duration-150 ${
-          activeMatter === null
-            ? 'bg-[#4F7EF7] text-white'
-            : 'bg-transparent border border-[#2A2D3E] text-[#6B7080] hover:border-[#4F7EF7] hover:text-[#B0AFA8]'
-        }`}
-      >
-        All
-        <span
-          className={`px-1.5 py-0.5 rounded-[10px] text-[10px] font-mono ${
-            activeMatter === null
-              ? 'bg-white/20 text-white'
-              : 'bg-[#1E2130] text-[#6B7080]'
-          }`}
-        >
-          {totalCount}
-        </span>
-      </button>
-      
-      {/* Matter tabs */}
-      {matters.map((matter) => {
-        const isActive = activeMatter === matter.name;
-        const isEmpty = matter.count === 0;
-        
-        return (
-          <button
-            key={matter.name}
-            onClick={() => onSelectMatter(matter.name)}
-            className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-[20px] text-[13px] font-medium transition-all duration-150 ${
-              isActive
-                ? 'bg-[#4F7EF7] text-white'
-                : 'bg-transparent border border-[#2A2D3E] text-[#6B7080] hover:border-[#4F7EF7] hover:text-[#B0AFA8]'
-            } ${isEmpty && !isActive ? 'opacity-60' : ''}`}
-          >
-            {matter.name}
-            <span
-              className={`px-1.5 py-0.5 rounded-[10px] text-[10px] font-mono ${
-                isActive
-                  ? 'bg-white/20 text-white'
-                  : 'bg-[#1E2130] text-[#6B7080]'
-              }`}
-            >
-              {matter.count}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function DashboardPage() {
   const {
     profile,
+    matters,
     entries,
     approveEntry,
     discardEntry,
     updateEntry,
     approveFilteredEntries,
+    removeMatter,
     signOut,
   } = useApp();
 
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [activeMatter, setActiveMatter] = useState<string | null>(null);
+  const [selectedMatterId, setSelectedMatterId] = useState<string | null>(null);
 
-  const pendingEntries = entries.filter((e) => e.status === 'pending');
-  const approvedEntries = entries.filter((e) => e.status === 'approved');
+  const selectedMatter =
+    matters.find((matter) => matter.id === selectedMatterId) ?? matters[0] ?? null;
 
-  // Build matter tabs from pending entries
-  const matterTabs = useMemo(() => {
-    const matterCounts = new Map<string, number>();
-    const matterOrder: string[] = [];
-    
-    // Count pending entries per matter, maintaining insertion order
-    entries.forEach((e) => {
-      if (e.matterName && !matterCounts.has(e.matterName)) {
-        matterCounts.set(e.matterName, 0);
-        matterOrder.push(e.matterName);
-      }
-    });
-    
-    // Count only pending entries
-    pendingEntries.forEach((e) => {
-      if (e.matterName) {
-        matterCounts.set(e.matterName, (matterCounts.get(e.matterName) || 0) + 1);
-      }
-    });
-    
-    return matterOrder.map((name) => ({
-      name,
-      count: matterCounts.get(name) || 0,
-    }));
-  }, [entries, pendingEntries]);
-
-  // Filtered pending entries based on active matter
-  const filteredPendingEntries = useMemo(() => {
-    if (activeMatter === null) {
-      return pendingEntries;
+  useEffect(() => {
+    if (!selectedMatterId && matters.length > 0) {
+      setSelectedMatterId(matters[0].id);
     }
-    return pendingEntries.filter((e) => e.matterName === activeMatter);
-  }, [pendingEntries, activeMatter]);
+  }, [selectedMatterId, matters]);
 
-  const pendingHours = pendingEntries.reduce((sum, e) => sum + e.hours, 0);
-  const approvedHours = approvedEntries.reduce((sum, e) => sum + e.hours, 0);
+  const allPendingEntries = entries.filter((e) => e.status === 'pending');
+  const allApprovedEntries = entries.filter((e) => e.status === 'approved');
+
+  const selectedMatterEntries = selectedMatter
+    ? entries.filter((e) => e.matterId === selectedMatter.id)
+    : [];
+
+  const pendingEntries = selectedMatterEntries.filter((e) => e.status === 'pending');
+  const approvedEntries = selectedMatterEntries.filter((e) => e.status === 'approved');
+
+  const pendingHours = allPendingEntries.reduce((sum, e) => sum + e.hours, 0);
+  const approvedHours = allApprovedEntries.reduce((sum, e) => sum + e.hours, 0);
   const hourlyRate = profile?.hourlyRate || 0;
   const approvedValue = approvedHours * hourlyRate;
   const totalReviewed = entries.filter((e) => e.status !== 'pending').length;
-  const approvalRate = totalReviewed > 0 
-    ? Math.round((approvedEntries.length / totalReviewed) * 100) 
+  const approvalRate = totalReviewed > 0
+    ? Math.round((allApprovedEntries.length / totalReviewed) * 100)
     : 0;
 
-  const handleApprove = (id: string) => {
-    approveEntry(id);
+  const handleApprove = async (id: string) => {
+    await approveEntry(id);
     setToast({ message: 'Entry approved and logged.', type: 'approve' });
   };
 
-  const handleDiscard = (id: string) => {
-    discardEntry(id);
+  const handleDiscard = async (id: string) => {
+    await discardEntry(id);
     setToast({ message: 'Entry discarded.', type: 'discard' });
   };
 
-  const handleSave = (id: string, updates: Partial<ActivityEntry>) => {
-    updateEntry(id, updates);
+  const handleSave = async (id: string, updates: Partial<ActivityEntry>) => {
+    await updateEntry(id, updates);
     setToast({ message: 'Entry updated.', type: 'save' });
   };
 
-  const handleApproveAll = () => {
-    const { count, matterName } = approveFilteredEntries(activeMatter);
-    if (matterName) {
-      setToast({ message: `${count} entries approved for ${matterName}.`, type: 'approve' });
-    } else {
-      setToast({ message: `${count} entries approved and logged.`, type: 'approve' });
-    }
+  const handleApproveAll = async () => {
+    if (!selectedMatter) return;
+
+    const { count } = await approveFilteredEntries(selectedMatter.id);
+
+    setToast({
+      message: `${count} entries approved for ${selectedMatter.name}.`,
+      type: 'approve',
+    });
+  };
+
+  const handleCloseMatter = async (matter: Matter) => {
+    const confirmed = window.confirm(
+      `Close ${matter.name}? This will remove it from active matters but preserve its history.`
+    );
+
+    if (!confirmed) return;
+
+    await removeMatter(matter.id);
+
+    const remainingMatters = matters.filter((m) => m.id !== matter.id);
+    setSelectedMatterId(remainingMatters[0]?.id ?? null);
+
+    setToast({ message: `${matter.name} closed.`, type: 'save' });
   };
 
   const initials = profile?.fullName
@@ -350,7 +303,6 @@ export function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0C0E14]">
-      {/* Header */}
       <header className="border-b border-[#1E2130] px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -362,6 +314,7 @@ export function DashboardPage() {
               <p className="text-sm text-[#4A4F62]">{profile?.lawFirm}</p>
             </div>
           </div>
+
           <div className="flex items-center gap-6">
             <span className="text-[#E8E6DF] font-mono">
               ${profile?.hourlyRate?.toLocaleString()}/hr
@@ -377,79 +330,116 @@ export function DashboardPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
-        {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <MetricCard
             label="Pending review"
-            value={pendingEntries.length}
+            value={allPendingEntries.length}
             subtitle={`${pendingHours.toFixed(2)} hours total`}
             color="#4F7EF7"
           />
           <MetricCard
             label="Recovered today"
             value={`${approvedHours.toFixed(2)}h`}
-            subtitle={`$${approvedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            subtitle={`$${approvedValue.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`}
             color="#22C48A"
           />
           <MetricCard
             label="Approval rate"
             value={`${approvalRate}%`}
-            subtitle={`${approvedEntries.length} of ${totalReviewed} reviewed`}
+            subtitle={`${allApprovedEntries.length} of ${totalReviewed} reviewed`}
             color="#E8A838"
           />
         </div>
 
-        {/* Activity Queue */}
+        <div className="mb-8">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-[#E8E6DF]">Matter workspace</h2>
+              <p className="text-sm text-[#4A4F62]">
+                {matters.length} active {matters.length === 1 ? 'matter' : 'matters'}
+              </p>
+            </div>
+
+            {matters.length > 1 && (
+              <select
+                value={selectedMatter?.id ?? ''}
+                onChange={(e) => setSelectedMatterId(e.target.value)}
+                className="bg-[#13151E] border border-[#1E2130] text-[#E8E6DF] rounded-lg px-3 py-2 text-sm focus:border-[#4F7EF7] focus:outline-none"
+              >
+                {matters.map((matter) => (
+                  <option key={matter.id} value={matter.id}>
+                    {matter.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {selectedMatter ? (
+            <MatterCard
+              matter={selectedMatter}
+              onClose={() => void handleCloseMatter(selectedMatter)}
+            />
+          ) : (
+            <div className="bg-[#13151E] border border-[#1E2130] rounded-xl p-8 text-center">
+              <p className="text-[#4A4F62]">No active matters yet.</p>
+            </div>
+          )}
+        </div>
+
         <div className="mb-8">
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="text-xl font-semibold text-[#E8E6DF]">Activity queue</h2>
-              <p className="text-sm text-[#4A4F62]">{pendingEntries.length} entries pending review</p>
+              <p className="text-sm text-[#4A4F62]">
+                {selectedMatter
+                  ? `${pendingEntries.length} entries pending for ${selectedMatter.name}`
+                  : 'No matter selected'}
+              </p>
             </div>
-            {filteredPendingEntries.length > 0 && (
+
+            {pendingEntries.length > 0 && selectedMatter && (
               <button
                 onClick={handleApproveAll}
                 className="px-4 py-2 bg-[#1A2540] text-[#4F7EF7] border border-[#4F7EF7] rounded-lg text-sm font-medium hover:bg-[#1E2A4A] transition-colors"
               >
-                Approve all ({filteredPendingEntries.length})
+                Approve all ({pendingEntries.length})
               </button>
             )}
           </div>
 
-          {/* Matter filter tabs */}
-          <MatterFilterTabs
-            matters={matterTabs}
-            activeMatter={activeMatter}
-            onSelectMatter={setActiveMatter}
-            totalCount={pendingEntries.length}
-          />
-
           <div className="space-y-4 mt-4">
-            {filteredPendingEntries.map((entry) => (
+            {pendingEntries.map((entry) => (
               <ActivityCard
                 key={entry.id}
                 entry={entry}
                 hourlyRate={hourlyRate}
-                onApprove={() => handleApprove(entry.id)}
-                onDiscard={() => handleDiscard(entry.id)}
-                onSave={(updates) => handleSave(entry.id, updates)}
+                onApprove={() => void handleApprove(entry.id)}
+                onDiscard={() => void handleDiscard(entry.id)}
+                onSave={(updates) => void handleSave(entry.id, updates)}
               />
             ))}
-            {filteredPendingEntries.length === 0 && activeMatter !== null && (
+
+            {pendingEntries.length === 0 && selectedMatter && (
               <div className="bg-[#13151E] border border-[#1E2130] rounded-xl p-12 text-center">
-                <p className="text-[#6B7080]">All caught up on {activeMatter}.</p>
-                <p className="text-sm text-[#4A4F62] mt-1">Switch to another matter or check back soon.</p>
+                <p className="text-[#6B7080]">All caught up on {selectedMatter.name}.</p>
+                <p className="text-sm text-[#4A4F62] mt-1">
+                  Switch to another matter or check back soon.
+                </p>
               </div>
             )}
-            {filteredPendingEntries.length === 0 && activeMatter === null && (
+
+            {pendingEntries.length === 0 && !selectedMatter && (
               <div className="bg-[#13151E] border border-[#1E2130] rounded-xl p-12 text-center">
-                <p className="text-[#4A4F62]">All caught up! No pending entries.</p>
+                <p className="text-[#4A4F62]">No active matter selected.</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Approved Section */}
         {approvedEntries.length > 0 && (
           <div className="opacity-70">
             <h3 className="text-xs uppercase tracking-wider text-[#4A4F62] mb-4">
@@ -475,7 +465,6 @@ export function DashboardPage() {
         )}
       </main>
 
-      {/* Toast */}
       {toast && (
         <Toast
           message={toast.message}

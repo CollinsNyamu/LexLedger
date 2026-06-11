@@ -21,6 +21,7 @@ type MatterRow = {
 
 type ActivityEntryRow = {
   id: string;
+  matter_id: string | null;
   source: 'email' | 'meeting' | 'slack' | null;
   timestamp_label: string | null;
   subject: string | null;
@@ -50,10 +51,11 @@ export async function getAttorneyDashboardData(userId: string): Promise<{
   if (profileError) throw profileError;
 
   const { data: matterRows, error: mattersError } = await supabase
-    .from('matters')
-    .select('id, name, client_name, matter_type, client_email')
-    .eq('attorney_id', userId)
-    .order('created_at', { ascending: false });
+  .from('matters')
+  .select('id, name, client_name, matter_type, client_email')
+  .eq('attorney_id', userId)
+  .eq('status', 'active')
+  .order('created_at', { ascending: false });
 
   if (mattersError) throw mattersError;
 
@@ -61,6 +63,7 @@ export async function getAttorneyDashboardData(userId: string): Promise<{
     .from('activity_entries')
     .select(`
       id,
+      matter_id,
       source,
       timestamp_label,
       subject,
@@ -131,23 +134,12 @@ export async function approveAllPendingActivityEntries() {
   if (error) throw error;
 }
 
-export async function approvePendingActivityEntriesByMatterName(matterName: string) {
-  const { data: matterRows, error: matterError } = await supabase
-    .from('matters')
-    .select('id')
-    .eq('name', matterName);
-
-  if (matterError) throw matterError;
-
-  const matterIds = (matterRows ?? []).map(matter => matter.id);
-
-  if (matterIds.length === 0) return;
-
+export async function approvePendingActivityEntriesByMatterId(matterId: string) {
   const { error } = await supabase
     .from('activity_entries')
     .update({ status: 'approved' })
     .eq('status', 'pending')
-    .in('matter_id', matterIds);
+    .eq('matter_id', matterId);
 
   if (error) throw error;
 }
@@ -175,6 +167,7 @@ function mapMatter(row: MatterRow): Matter {
 function mapActivityEntry(row: ActivityEntryRow): ActivityEntry {
   return {
     id: row.id,
+    matterId: row.matter_id ?? undefined,
     source: row.source ?? 'email',
     timestamp: row.timestamp_label ?? '',
     subject: row.subject ?? '',
