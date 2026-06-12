@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { AppProvider } from '@/components/app-context';
+import { DashboardPage } from '@/components/dashboard-page';
 
-export default async function Home() {
+export default async function AttorneyDashboardRoute() {
   const supabase = await createClient();
 
   const {
@@ -18,17 +20,13 @@ export default async function Home() {
     .eq('id', user.id)
     .single();
 
-  if (!profile) {
-    redirect('/auth');
+  if (!profile || profile.role !== 'attorney') {
+    redirect('/');
   }
 
-  if (profile.role === 'attorney') {
-    redirect('/attorney-dashboard');
-  }
-
-  if (profile.role === 'client') {
-    redirect('/client-dashboard');
-  }
-
-  redirect('/auth');
+  return (
+    <AppProvider>
+      <DashboardPage />
+    </AppProvider>
+  );
 }
